@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "STM32F103 OpenOCD",
+            "cwd": "${workspaceFolder}",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32f1x.cfg"
+            ],
+            "executable": "${workspaceFolder}/build/lora_testting_vs_code.elf",
+            "gdbPath": "/usr/bin/gdb-multiarch",
+            "runToEntryPoint": "main" ,
+            "liveWatch": {
+                "enabled": true,
+                "samplesPerSecond": 4
+            },
+        }
+    ]
+}
