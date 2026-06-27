@@ -18,13 +18,13 @@
 #define CFG_FREQ_B3   0x3D
 #define CFG_FREQ_B4   0x60
 
-#define CFG_TX_POWER  22        /* dBm */
+#define CFG_TX_POWER  14        /* dBm */
 #define CFG_SF        0x0C      /* SF12 */
 #define CFG_BW        0x04      /* BW125 */
 #define CFG_CR        0x01      /* CR 4/5 */
 
 /* ============== Интервал передачи ============== */
-#define CFG_TX_INTERVAL_MS   3000   /* пауза между uplink'ами, мс */
+#define CFG_TX_INTERVAL_MS   60000   /* пауза между uplink'ами, мс */
 
 /* ============== LoRaWAN ABP ключи ==============
  * Должны совпадать с устройством в ChirpStack. */
