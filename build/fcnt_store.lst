@@ -1,0 +1,532 @@
+ARM GAS  /tmp/ccbj2MNt.s 			page 1
+
+
+   1              		.cpu cortex-m3
+   2              		.eabi_attribute 20, 1
+   3              		.eabi_attribute 21, 1
+   4              		.eabi_attribute 23, 3
+   5              		.eabi_attribute 24, 1
+   6              		.eabi_attribute 25, 1
+   7              		.eabi_attribute 26, 1
+   8              		.eabi_attribute 30, 1
+   9              		.eabi_attribute 34, 1
+  10              		.eabi_attribute 18, 4
+  11              		.file	"fcnt_store.c"
+  12              		.text
+  13              	.Ltext0:
+  14              		.cfi_sections	.debug_frame
+  15              		.section	.text.fcnt_erase_page,"ax",%progbits
+  16              		.align	1
+  17              		.arch armv7-m
+  18              		.syntax unified
+  19              		.thumb
+  20              		.thumb_func
+  21              		.fpu softvfp
+  23              	fcnt_erase_page:
+  24              	.LFB66:
+  25              		.file 1 "Core/Src/fcnt_store.c"
+   1:Core/Src/fcnt_store.c **** /**
+   2:Core/Src/fcnt_store.c ****   * @file    fcnt_store.c
+   3:Core/Src/fcnt_store.c ****   * @brief   Хранение LoRaWAN FCnt в Flash STM32F103 с wear-leveling.
+   4:Core/Src/fcnt_store.c ****   *
+   5:Core/Src/fcnt_store.c ****   *  Идея: вместо стирания страницы на каждую запись, пи�
+   6:Core/Src/fcnt_store.c ****   *  последовательно в свободные слоты одной страницы. �
+   7:Core/Src/fcnt_store.c ****   *  только когда она заполнилась. Это многократно прод�
+   8:Core/Src/fcnt_store.c ****   *
+   9:Core/Src/fcnt_store.c ****   *  Формат слота (8 байт): [ uint32 fcnt ][ uint32 magic=0xCAFEFC01 ]
+  10:Core/Src/fcnt_store.c ****   *  Пустой (стёртый) слот = 0xFFFFFFFF 0xFFFFFFFF.
+  11:Core/Src/fcnt_store.c ****   *  Актуальное значение = последний слот с корректным ma
+  12:Core/Src/fcnt_store.c ****   */
+  13:Core/Src/fcnt_store.c **** #include "main.h"
+  14:Core/Src/fcnt_store.c **** #include <string.h>
+  15:Core/Src/fcnt_store.c **** #include "stdint.h"
+  16:Core/Src/fcnt_store.c **** /* ВАЖНО: выбери страницу Flash, которая НЕ занята програм
+  17:Core/Src/fcnt_store.c ****  * Для STM32F103C8 (64 КБ Flash, страница 1 КБ) последняя страница 
+  18:Core/Src/fcnt_store.c ****  * Для STM32F103CB (128 КБ) последняя = 0x0801FC00.
+  19:Core/Src/fcnt_store.c ****  * Проверь свой объём Flash и размер прошивки (.map файл)! */
+  20:Core/Src/fcnt_store.c **** #define FCNT_PAGE_ADDR    0x0800FC00U          /* адрес страницы хранения  */
+  21:Core/Src/fcnt_store.c **** #define FCNT_PAGE_SIZE    1024U                /* размер страницы (F103=1К)*/
+  22:Core/Src/fcnt_store.c **** #define FCNT_SLOT_SIZE    8U                   /* 4 байта fcnt + 4 magic   */
+  23:Core/Src/fcnt_store.c **** #define FCNT_MAGIC        0xCAFEFC01U          /* метка валидного слота    */
+  24:Core/Src/fcnt_store.c **** #define FCNT_SLOTS        (FCNT_PAGE_SIZE / FCNT_SLOT_SIZE)
+  25:Core/Src/fcnt_store.c **** 
+  26:Core/Src/fcnt_store.c **** /* Чтение 32-бит из Flash */
+  27:Core/Src/fcnt_store.c **** static inline uint32_t flash_rd32(uint32_t addr)
+  28:Core/Src/fcnt_store.c **** {
+  29:Core/Src/fcnt_store.c ****     return *(volatile uint32_t *)addr;
+  30:Core/Src/fcnt_store.c **** }
+  31:Core/Src/fcnt_store.c **** 
+  32:Core/Src/fcnt_store.c **** /* Стирание страницы хранения FCnt */
+  33:Core/Src/fcnt_store.c **** static void fcnt_erase_page(void)
+ARM GAS  /tmp/ccbj2MNt.s 			page 2
+
+
+  34:Core/Src/fcnt_store.c **** {
+  26              		.loc 1 34 1 view -0
+  27              		.cfi_startproc
+  28              		@ args = 0, pretend = 0, frame = 24
+  29              		@ frame_needed = 0, uses_anonymous_args = 0
+  30 0000 00B5     		push	{lr}
+  31              	.LCFI0:
+  32              		.cfi_def_cfa_offset 4
+  33              		.cfi_offset 14, -4
+  34 0002 87B0     		sub	sp, sp, #28
+  35              	.LCFI1:
+  36              		.cfi_def_cfa_offset 32
+  35:Core/Src/fcnt_store.c ****     FLASH_EraseInitTypeDef er = {0};
+  37              		.loc 1 35 5 view .LVU1
+  38              		.loc 1 35 28 is_stmt 0 view .LVU2
+  39 0004 0023     		movs	r3, #0
+  40 0006 0293     		str	r3, [sp, #8]
+  41 0008 0393     		str	r3, [sp, #12]
+  42 000a 0493     		str	r3, [sp, #16]
+  43 000c 0593     		str	r3, [sp, #20]
+  36:Core/Src/fcnt_store.c ****     uint32_t page_error = 0;
+  44              		.loc 1 36 5 is_stmt 1 view .LVU3
+  45              		.loc 1 36 14 is_stmt 0 view .LVU4
+  46 000e 0193     		str	r3, [sp, #4]
+  37:Core/Src/fcnt_store.c ****     er.TypeErase   = FLASH_TYPEERASE_PAGES;
+  47              		.loc 1 37 5 is_stmt 1 view .LVU5
+  38:Core/Src/fcnt_store.c ****     er.PageAddress = FCNT_PAGE_ADDR;
+  48              		.loc 1 38 5 view .LVU6
+  49              		.loc 1 38 20 is_stmt 0 view .LVU7
+  50 0010 074B     		ldr	r3, .L3
+  51 0012 0493     		str	r3, [sp, #16]
+  39:Core/Src/fcnt_store.c ****     er.NbPages     = 1;
+  52              		.loc 1 39 5 is_stmt 1 view .LVU8
+  53              		.loc 1 39 20 is_stmt 0 view .LVU9
+  54 0014 0123     		movs	r3, #1
+  55 0016 0593     		str	r3, [sp, #20]
+  40:Core/Src/fcnt_store.c ****     HAL_FLASH_Unlock();
+  56              		.loc 1 40 5 is_stmt 1 view .LVU10
+  57 0018 FFF7FEFF 		bl	HAL_FLASH_Unlock
+  58              	.LVL0:
+  41:Core/Src/fcnt_store.c ****     HAL_FLASHEx_Erase(&er, &page_error);
+  59              		.loc 1 41 5 view .LVU11
+  60 001c 01A9     		add	r1, sp, #4
+  61 001e 02A8     		add	r0, sp, #8
+  62 0020 FFF7FEFF 		bl	HAL_FLASHEx_Erase
+  63              	.LVL1:
+  42:Core/Src/fcnt_store.c ****     HAL_FLASH_Lock();
+  64              		.loc 1 42 5 view .LVU12
+  65 0024 FFF7FEFF 		bl	HAL_FLASH_Lock
+  66              	.LVL2:
+  43:Core/Src/fcnt_store.c **** }
+  67              		.loc 1 43 1 is_stmt 0 view .LVU13
+  68 0028 07B0     		add	sp, sp, #28
+  69              	.LCFI2:
+  70              		.cfi_def_cfa_offset 4
+  71              		@ sp needed
+  72 002a 5DF804FB 		ldr	pc, [sp], #4
+ARM GAS  /tmp/ccbj2MNt.s 			page 3
+
+
+  73              	.L4:
+  74 002e 00BF     		.align	2
+  75              	.L3:
+  76 0030 00FC0008 		.word	134282240
+  77              		.cfi_endproc
+  78              	.LFE66:
+  80              		.section	.text.fcnt_load,"ax",%progbits
+  81              		.align	1
+  82              		.global	fcnt_load
+  83              		.syntax unified
+  84              		.thumb
+  85              		.thumb_func
+  86              		.fpu softvfp
+  88              	fcnt_load:
+  89              	.LFB67:
+  44:Core/Src/fcnt_store.c **** 
+  45:Core/Src/fcnt_store.c **** /**
+  46:Core/Src/fcnt_store.c ****   * @brief Загрузить последний сохранённый FCnt.
+  47:Core/Src/fcnt_store.c ****   * @return сохранённое значение, либо 0 если страница пуст�
+  48:Core/Src/fcnt_store.c ****   */
+  49:Core/Src/fcnt_store.c **** uint32_t fcnt_load(void)
+  50:Core/Src/fcnt_store.c **** {
+  90              		.loc 1 50 1 is_stmt 1 view -0
+  91              		.cfi_startproc
+  92              		@ args = 0, pretend = 0, frame = 0
+  93              		@ frame_needed = 0, uses_anonymous_args = 0
+  94              		@ link register save eliminated.
+  95 0000 30B4     		push	{r4, r5}
+  96              	.LCFI3:
+  97              		.cfi_def_cfa_offset 8
+  98              		.cfi_offset 4, -8
+  99              		.cfi_offset 5, -4
+  51:Core/Src/fcnt_store.c ****     uint32_t last = 0;
+ 100              		.loc 1 51 5 view .LVU15
+ 101              	.LVL3:
+  52:Core/Src/fcnt_store.c ****     int found = 0;
+ 102              		.loc 1 52 5 view .LVU16
+  53:Core/Src/fcnt_store.c ****     for (uint32_t i = 0; i < FCNT_SLOTS; i++) {
+ 103              		.loc 1 53 5 view .LVU17
+ 104              	.LBB14:
+ 105              		.loc 1 53 10 view .LVU18
+ 106              		.loc 1 53 19 is_stmt 0 view .LVU19
+ 107 0002 0022     		movs	r2, #0
+ 108              	.LBE14:
+  52:Core/Src/fcnt_store.c ****     int found = 0;
+ 109              		.loc 1 52 9 view .LVU20
+ 110 0004 1546     		mov	r5, r2
+  51:Core/Src/fcnt_store.c ****     uint32_t last = 0;
+ 111              		.loc 1 51 14 view .LVU21
+ 112 0006 1046     		mov	r0, r2
+ 113              	.LBB21:
+ 114              		.loc 1 53 5 view .LVU22
+ 115 0008 02E0     		b	.L6
+ 116              	.LVL4:
+ 117              	.L11:
+ 118              	.LBB15:
+  54:Core/Src/fcnt_store.c ****         uint32_t addr  = FCNT_PAGE_ADDR + i * FCNT_SLOT_SIZE;
+ARM GAS  /tmp/ccbj2MNt.s 			page 4
+
+
+  55:Core/Src/fcnt_store.c ****         uint32_t value = flash_rd32(addr);
+  56:Core/Src/fcnt_store.c ****         uint32_t magic = flash_rd32(addr + 4);
+  57:Core/Src/fcnt_store.c ****         if (magic == FCNT_MAGIC) {
+  58:Core/Src/fcnt_store.c ****             last  = value;     /* перезаписываем — нужен ПОСЛЕДНИЙ в
+ 119              		.loc 1 58 19 view .LVU23
+ 120 000a 2046     		mov	r0, r4
+ 121              	.LVL5:
+  59:Core/Src/fcnt_store.c ****             found = 1;
+ 122              		.loc 1 59 19 view .LVU24
+ 123 000c 0125     		movs	r5, #1
+ 124              	.LVL6:
+ 125              	.L7:
+ 126              		.loc 1 59 19 view .LVU25
+ 127              	.LBE15:
+  53:Core/Src/fcnt_store.c ****     for (uint32_t i = 0; i < FCNT_SLOTS; i++) {
+ 128              		.loc 1 53 42 is_stmt 1 discriminator 2 view .LVU26
+  53:Core/Src/fcnt_store.c ****     for (uint32_t i = 0; i < FCNT_SLOTS; i++) {
+ 129              		.loc 1 53 43 is_stmt 0 discriminator 2 view .LVU27
+ 130 000e 0132     		adds	r2, r2, #1
+ 131              	.LVL7:
+ 132              	.L6:
+  53:Core/Src/fcnt_store.c ****     for (uint32_t i = 0; i < FCNT_SLOTS; i++) {
+ 133              		.loc 1 53 26 is_stmt 1 discriminator 1 view .LVU28
+  53:Core/Src/fcnt_store.c ****     for (uint32_t i = 0; i < FCNT_SLOTS; i++) {
+ 134              		.loc 1 53 5 is_stmt 0 discriminator 1 view .LVU29
+ 135 0010 7F2A     		cmp	r2, #127
+ 136 0012 0FD8     		bhi	.L8
+ 137              	.LBB20:
+  54:Core/Src/fcnt_store.c ****         uint32_t addr  = FCNT_PAGE_ADDR + i * FCNT_SLOT_SIZE;
+ 138              		.loc 1 54 9 is_stmt 1 view .LVU30
+  54:Core/Src/fcnt_store.c ****         uint32_t addr  = FCNT_PAGE_ADDR + i * FCNT_SLOT_SIZE;
+ 139              		.loc 1 54 41 is_stmt 0 view .LVU31
+ 140 0014 02F18073 		add	r3, r2, #16777216
+ 141 0018 03F5FC53 		add	r3, r3, #8064
+  54:Core/Src/fcnt_store.c ****         uint32_t addr  = FCNT_PAGE_ADDR + i * FCNT_SLOT_SIZE;
+ 142              		.loc 1 54 18 view .LVU32
+ 143 001c DB00     		lsls	r3, r3, #3
+ 144              	.LVL8:
+  55:Core/Src/fcnt_store.c ****         uint32_t magic = flash_rd32(addr + 4);
+ 145              		.loc 1 55 9 is_stmt 1 view .LVU33
+ 146              	.LBB16:
+ 147              	.LBI16:
+  27:Core/Src/fcnt_store.c **** {
+ 148              		.loc 1 27 24 view .LVU34
+ 149              	.LBB17:
+  29:Core/Src/fcnt_store.c **** }
+ 150              		.loc 1 29 5 view .LVU35
+  29:Core/Src/fcnt_store.c **** }
+ 151              		.loc 1 29 12 is_stmt 0 view .LVU36
+ 152 001e 1C68     		ldr	r4, [r3]
+ 153              	.LVL9:
+  29:Core/Src/fcnt_store.c **** }
+ 154              		.loc 1 29 12 view .LVU37
+ 155              	.LBE17:
+ 156              	.LBE16:
+  56:Core/Src/fcnt_store.c ****         if (magic == FCNT_MAGIC) {
+ 157              		.loc 1 56 9 is_stmt 1 view .LVU38
+ARM GAS  /tmp/ccbj2MNt.s 			page 5
+
+
+ 158              	.LBB18:
+ 159              	.LBI18:
+  27:Core/Src/fcnt_store.c **** {
+ 160              		.loc 1 27 24 view .LVU39
+ 161              	.LBB19:
+  29:Core/Src/fcnt_store.c **** }
+ 162              		.loc 1 29 5 view .LVU40
+  29:Core/Src/fcnt_store.c **** }
+ 163              		.loc 1 29 12 is_stmt 0 view .LVU41
+ 164 0020 5B68     		ldr	r3, [r3, #4]
+ 165              	.LVL10:
+  29:Core/Src/fcnt_store.c **** }
+ 166              		.loc 1 29 12 view .LVU42
+ 167              	.LBE19:
+ 168              	.LBE18:
+  57:Core/Src/fcnt_store.c ****             last  = value;     /* перезаписываем — нужен ПОСЛЕДНИЙ в
+ 169              		.loc 1 57 9 is_stmt 1 view .LVU43
+  57:Core/Src/fcnt_store.c ****             last  = value;     /* перезаписываем — нужен ПОСЛЕДНИЙ в
+ 170              		.loc 1 57 12 is_stmt 0 view .LVU44
+ 171 0022 0649     		ldr	r1, .L14
+ 172 0024 8B42     		cmp	r3, r1
+ 173 0026 F0D0     		beq	.L11
+  60:Core/Src/fcnt_store.c ****         } else if (value == 0xFFFFFFFFU && magic == 0xFFFFFFFFU) {
+ 174              		.loc 1 60 16 is_stmt 1 view .LVU45
+ 175              		.loc 1 60 19 is_stmt 0 view .LVU46
+ 176 0028 B4F1FF3F 		cmp	r4, #-1
+ 177 002c EFD1     		bne	.L7
+ 178              		.loc 1 60 41 discriminator 1 view .LVU47
+ 179 002e B3F1FF3F 		cmp	r3, #-1
+ 180 0032 ECD1     		bne	.L7
+ 181              	.LVL11:
+ 182              	.L8:
+ 183              		.loc 1 60 41 discriminator 1 view .LVU48
+ 184              	.LBE20:
+ 185              	.LBE21:
+  61:Core/Src/fcnt_store.c ****             break;             /* дошли до пустого слота — дальше тож
+  62:Core/Src/fcnt_store.c ****         }
+  63:Core/Src/fcnt_store.c ****     }
+  64:Core/Src/fcnt_store.c ****     return found ? last : 0;
+ 186              		.loc 1 64 5 is_stmt 1 view .LVU49
+ 187              		.loc 1 64 25 is_stmt 0 view .LVU50
+ 188 0034 05B9     		cbnz	r5, .L5
+ 189 0036 0020     		movs	r0, #0
+ 190              	.LVL12:
+ 191              	.L5:
+  65:Core/Src/fcnt_store.c **** }
+ 192              		.loc 1 65 1 view .LVU51
+ 193 0038 30BC     		pop	{r4, r5}
+ 194              	.LCFI4:
+ 195              		.cfi_restore 5
+ 196              		.cfi_restore 4
+ 197              		.cfi_def_cfa_offset 0
+ 198              	.LVL13:
+ 199              		.loc 1 65 1 view .LVU52
+ 200 003a 7047     		bx	lr
+ 201              	.L15:
+ 202              		.align	2
+ARM GAS  /tmp/ccbj2MNt.s 			page 6
+
+
+ 203              	.L14:
+ 204 003c 01FCFECA 		.word	-889259007
+ 205              		.cfi_endproc
+ 206              	.LFE67:
+ 208              		.section	.text.fcnt_save,"ax",%progbits
+ 209              		.align	1
+ 210              		.global	fcnt_save
+ 211              		.syntax unified
+ 212              		.thumb
+ 213              		.thumb_func
+ 214              		.fpu softvfp
+ 216              	fcnt_save:
+ 217              	.LVL14:
+ 218              	.LFB68:
+  66:Core/Src/fcnt_store.c **** 
+  67:Core/Src/fcnt_store.c **** /**
+  68:Core/Src/fcnt_store.c ****   * @brief Сохранить новое значение FCnt.
+  69:Core/Src/fcnt_store.c ****   *        Пишет в следующий свободный слот; если страница 
+  70:Core/Src/fcnt_store.c ****   *        стирает её, пишет в начало.
+  71:Core/Src/fcnt_store.c ****   */
+  72:Core/Src/fcnt_store.c **** void fcnt_save(uint32_t fcnt)
+  73:Core/Src/fcnt_store.c **** {
+ 219              		.loc 1 73 1 is_stmt 1 view -0
+ 220              		.cfi_startproc
+ 221              		@ args = 0, pretend = 0, frame = 0
+ 222              		@ frame_needed = 0, uses_anonymous_args = 0
+ 223              		.loc 1 73 1 is_stmt 0 view .LVU54
+ 224 0000 38B5     		push	{r3, r4, r5, lr}
+ 225              	.LCFI5:
+ 226              		.cfi_def_cfa_offset 16
+ 227              		.cfi_offset 3, -16
+ 228              		.cfi_offset 4, -12
+ 229              		.cfi_offset 5, -8
+ 230              		.cfi_offset 14, -4
+ 231 0002 0546     		mov	r5, r0
+  74:Core/Src/fcnt_store.c ****     /* найти первый свободный слот */
+  75:Core/Src/fcnt_store.c ****     uint32_t free_idx = FCNT_SLOTS;  /* FCNT_SLOTS == "не найдено" */
+ 232              		.loc 1 75 5 is_stmt 1 view .LVU55
+ 233              	.LVL15:
+  76:Core/Src/fcnt_store.c ****     for (uint32_t i = 0; i < FCNT_SLOTS; i++) {
+ 234              		.loc 1 76 5 view .LVU56
+ 235              	.LBB22:
+ 236              		.loc 1 76 10 view .LVU57
+ 237              		.loc 1 76 19 is_stmt 0 view .LVU58
+ 238 0004 0021     		movs	r1, #0
+ 239              		.loc 1 76 5 view .LVU59
+ 240 0006 00E0     		b	.L17
+ 241              	.LVL16:
+ 242              	.L18:
+ 243              		.loc 1 76 42 is_stmt 1 discriminator 2 view .LVU60
+ 244              		.loc 1 76 43 is_stmt 0 discriminator 2 view .LVU61
+ 245 0008 0131     		adds	r1, r1, #1
+ 246              	.LVL17:
+ 247              	.L17:
+ 248              		.loc 1 76 26 is_stmt 1 discriminator 1 view .LVU62
+ 249              		.loc 1 76 5 is_stmt 0 discriminator 1 view .LVU63
+ 250 000a 7F29     		cmp	r1, #127
+ARM GAS  /tmp/ccbj2MNt.s 			page 7
+
+
+ 251 000c 25D8     		bhi	.L23
+ 252              	.LBB23:
+  77:Core/Src/fcnt_store.c ****         uint32_t addr = FCNT_PAGE_ADDR + i * FCNT_SLOT_SIZE;
+ 253              		.loc 1 77 9 is_stmt 1 view .LVU64
+ 254              		.loc 1 77 40 is_stmt 0 view .LVU65
+ 255 000e 01F18073 		add	r3, r1, #16777216
+ 256 0012 03F5FC53 		add	r3, r3, #8064
+ 257              		.loc 1 77 18 view .LVU66
+ 258 0016 DB00     		lsls	r3, r3, #3
+ 259              	.LVL18:
+  78:Core/Src/fcnt_store.c ****         if (flash_rd32(addr) == 0xFFFFFFFFU &&
+ 260              		.loc 1 78 9 is_stmt 1 view .LVU67
+ 261              	.LBB24:
+ 262              	.LBI24:
+  27:Core/Src/fcnt_store.c **** {
+ 263              		.loc 1 27 24 view .LVU68
+ 264              	.LBB25:
+  29:Core/Src/fcnt_store.c **** }
+ 265              		.loc 1 29 5 view .LVU69
+  29:Core/Src/fcnt_store.c **** }
+ 266              		.loc 1 29 12 is_stmt 0 view .LVU70
+ 267 0018 1C68     		ldr	r4, [r3]
+ 268              	.LVL19:
+  29:Core/Src/fcnt_store.c **** }
+ 269              		.loc 1 29 12 view .LVU71
+ 270              	.LBE25:
+ 271              	.LBE24:
+ 272              		.loc 1 78 12 view .LVU72
+ 273 001a B4F1FF3F 		cmp	r4, #-1
+ 274 001e F3D1     		bne	.L18
+ 275              	.LVL20:
+ 276              	.LBB26:
+ 277              	.LBI26:
+  27:Core/Src/fcnt_store.c **** {
+ 278              		.loc 1 27 24 is_stmt 1 discriminator 1 view .LVU73
+ 279              	.LBB27:
+  29:Core/Src/fcnt_store.c **** }
+ 280              		.loc 1 29 5 discriminator 1 view .LVU74
+  29:Core/Src/fcnt_store.c **** }
+ 281              		.loc 1 29 12 is_stmt 0 discriminator 1 view .LVU75
+ 282 0020 5B68     		ldr	r3, [r3, #4]
+ 283              	.LVL21:
+  29:Core/Src/fcnt_store.c **** }
+ 284              		.loc 1 29 12 discriminator 1 view .LVU76
+ 285              	.LBE27:
+ 286              	.LBE26:
+ 287              		.loc 1 78 45 discriminator 1 view .LVU77
+ 288 0022 B3F1FF3F 		cmp	r3, #-1
+ 289 0026 EFD1     		bne	.L18
+ 290              	.LVL22:
+ 291              	.L19:
+ 292              		.loc 1 78 45 discriminator 1 view .LVU78
+ 293              	.LBE23:
+ 294              	.LBE22:
+  79:Core/Src/fcnt_store.c ****             flash_rd32(addr + 4) == 0xFFFFFFFFU) {
+  80:Core/Src/fcnt_store.c ****             free_idx = i;
+  81:Core/Src/fcnt_store.c ****             break;
+ARM GAS  /tmp/ccbj2MNt.s 			page 8
+
+
+  82:Core/Src/fcnt_store.c ****         }
+  83:Core/Src/fcnt_store.c ****     }
+  84:Core/Src/fcnt_store.c **** 
+  85:Core/Src/fcnt_store.c ****     /* страница заполнена — стереть и начать сначала */
+  86:Core/Src/fcnt_store.c ****     if (free_idx == FCNT_SLOTS) {
+ 295              		.loc 1 86 5 is_stmt 1 view .LVU79
+ 296              		.loc 1 86 8 is_stmt 0 view .LVU80
+ 297 0028 8029     		cmp	r1, #128
+ 298 002a 18D0     		beq	.L24
+ 299              	.LVL23:
+ 300              	.L21:
+  87:Core/Src/fcnt_store.c ****         fcnt_erase_page();
+  88:Core/Src/fcnt_store.c ****         free_idx = 0;
+  89:Core/Src/fcnt_store.c ****     }
+  90:Core/Src/fcnt_store.c **** 
+  91:Core/Src/fcnt_store.c ****     uint32_t addr = FCNT_PAGE_ADDR + free_idx * FCNT_SLOT_SIZE;
+ 301              		.loc 1 91 5 is_stmt 1 view .LVU81
+ 302              		.loc 1 91 36 is_stmt 0 view .LVU82
+ 303 002c 01F18071 		add	r1, r1, #16777216
+ 304              	.LVL24:
+ 305              		.loc 1 91 36 view .LVU83
+ 306 0030 01F5FC51 		add	r1, r1, #8064
+ 307              	.LVL25:
+ 308              		.loc 1 91 14 view .LVU84
+ 309 0034 CC00     		lsls	r4, r1, #3
+ 310              	.LVL26:
+  92:Core/Src/fcnt_store.c ****     HAL_FLASH_Unlock();
+ 311              		.loc 1 92 5 is_stmt 1 view .LVU85
+ 312 0036 FFF7FEFF 		bl	HAL_FLASH_Unlock
+ 313              	.LVL27:
+  93:Core/Src/fcnt_store.c ****     HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, addr,     fcnt);
+ 314              		.loc 1 93 5 view .LVU86
+ 315 003a 2A46     		mov	r2, r5
+ 316 003c 0023     		movs	r3, #0
+ 317 003e 2146     		mov	r1, r4
+ 318 0040 0220     		movs	r0, #2
+ 319 0042 FFF7FEFF 		bl	HAL_FLASH_Program
+ 320              	.LVL28:
+  94:Core/Src/fcnt_store.c ****     HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, addr + 4, FCNT_MAGIC);
+ 321              		.loc 1 94 5 view .LVU87
+ 322 0046 08A3     		adr	r3, .L25
+ 323 0048 D3E90023 		ldrd	r2, [r3]
+ 324 004c 211D     		adds	r1, r4, #4
+ 325 004e 0220     		movs	r0, #2
+ 326 0050 FFF7FEFF 		bl	HAL_FLASH_Program
+ 327              	.LVL29:
+  95:Core/Src/fcnt_store.c ****     HAL_FLASH_Lock();
+ 328              		.loc 1 95 5 view .LVU88
+ 329 0054 FFF7FEFF 		bl	HAL_FLASH_Lock
+ 330              	.LVL30:
+  96:Core/Src/fcnt_store.c **** }...
+ 331              		.loc 1 96 1 is_stmt 0 view .LVU89
+ 332 0058 38BD     		pop	{r3, r4, r5, pc}
+ 333              	.LVL31:
+ 334              	.L23:
+  75:Core/Src/fcnt_store.c ****     uint32_t free_idx = FCNT_SLOTS;  /* FCNT_SLOTS == "не найдено" */
+ 335              		.loc 1 75 14 view .LVU90
+ARM GAS  /tmp/ccbj2MNt.s 			page 9
+
+
+ 336 005a 8021     		movs	r1, #128
+ 337              	.LVL32:
+  75:Core/Src/fcnt_store.c ****     uint32_t free_idx = FCNT_SLOTS;  /* FCNT_SLOTS == "не найдено" */
+ 338              		.loc 1 75 14 view .LVU91
+ 339 005c E4E7     		b	.L19
+ 340              	.LVL33:
+ 341              	.L24:
+  87:Core/Src/fcnt_store.c ****         fcnt_erase_page();
+ 342              		.loc 1 87 9 is_stmt 1 view .LVU92
+ 343 005e FFF7FEFF 		bl	fcnt_erase_page
+ 344              	.LVL34:
+  88:Core/Src/fcnt_store.c ****         free_idx = 0;
+ 345              		.loc 1 88 9 view .LVU93
+  88:Core/Src/fcnt_store.c ****         free_idx = 0;
+ 346              		.loc 1 88 18 is_stmt 0 view .LVU94
+ 347 0062 0021     		movs	r1, #0
+ 348 0064 E2E7     		b	.L21
+ 349              	.L26:
+ 350 0066 00BF     		.align	3
+ 351              	.L25:
+ 352 0068 01FCFECA 		.word	-889259007
+ 353 006c 00000000 		.word	0
+ 354              		.cfi_endproc
+ 355              	.LFE68:
+ 357              		.text
+ 358              	.Letext0:
+ 359              		.file 2 "Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_flash_ex.h"
+ 360              		.file 3 "/usr/lib/gcc/arm-none-eabi/10.3.1/include/stdint.h"
+ 361              		.file 4 "Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_flash.h"
+ARM GAS  /tmp/ccbj2MNt.s 			page 10
+
+
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 fcnt_store.c
+     /tmp/ccbj2MNt.s:16     .text.fcnt_erase_page:0000000000000000 $t
+     /tmp/ccbj2MNt.s:23     .text.fcnt_erase_page:0000000000000000 fcnt_erase_page
+     /tmp/ccbj2MNt.s:76     .text.fcnt_erase_page:0000000000000030 $d
+     /tmp/ccbj2MNt.s:81     .text.fcnt_load:0000000000000000 $t
+     /tmp/ccbj2MNt.s:88     .text.fcnt_load:0000000000000000 fcnt_load
+     /tmp/ccbj2MNt.s:204    .text.fcnt_load:000000000000003c $d
+     /tmp/ccbj2MNt.s:209    .text.fcnt_save:0000000000000000 $t
+     /tmp/ccbj2MNt.s:216    .text.fcnt_save:0000000000000000 fcnt_save
+     /tmp/ccbj2MNt.s:352    .text.fcnt_save:0000000000000068 $d
+
+UNDEFINED SYMBOLS
+HAL_FLASH_Unlock
+HAL_FLASHEx_Erase
+HAL_FLASH_Lock
+HAL_FLASH_Program
